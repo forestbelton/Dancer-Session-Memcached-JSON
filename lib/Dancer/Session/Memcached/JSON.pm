@@ -14,13 +14,18 @@ use Storable qw(dclone);
 use Data::Structure::Util qw(unbless);
 use Dancer::Config qw(setting);
 
+use Dancer::Session::Memcached::JSON::Signature qw(sign unsign);
+
 my $MEMCACHED;
+my $secret;
 
 sub init {
     my ($class) = @_;
     my @servers = split ',', (setting('memcached_servers') // '');
 
     $class->SUPER::init;
+    $secret = setting('memcached_secret');
+
     if(!@servers or grep { not $_ =~ /^\d+\.\d+\.\d+\.\d+:\d+$/ } @servers) {
         die "Invalid value for memcached_servers. Should be a comma " .
                 "separated list of the form `server:port'";
@@ -36,6 +41,9 @@ method TO_JSON {
 fun create(Str $class) {
     my $self = $class->new;
 
+    $self->{id} = sign($self->id, $secret)
+        if $secret;
+
     $MEMCACHED->set($self->id => to_json($self, {
         allow_blessed   => 1,
         convert_blessed => 1,
@@ -45,6 +53,10 @@ fun create(Str $class) {
 }
 
 fun retrieve(Str $class, Str|Int $id) {
+    my $id = $secret
+        ? unsign($self->id, $secret)
+        : $self->id;
+
     my $val = $MEMCACHED->get($id);
 
     $val
@@ -53,11 +65,19 @@ fun retrieve(Str $class, Str|Int $id) {
 }
 
 method destroy() {
-    $MEMCACHED->delete($self->id);
+    my $id = $secret
+        ? unsign($self->id, $secret)
+        : $self->id;
+
+    $MEMCACHED->delete($id);
 }
 
 method flush() {
-    $MEMCACHED->set($self->id => to_json($self, {
+    my $id = $secret
+        ? unsign($self->id, $secret)
+        : $self->id;
+
+    $MEMCACHED->set($id => to_json($self, {
         allow_blessed   => 1,
         convert_blessed => 1,
     }));
@@ -84,3 +104,7 @@ This module implements a session store on top of Memcached. All data is
 converted to JSON before being sent to Memcached, which prevents invocations of
 C<Storable::nfreeze>. This common format allows the data to be shared among web
 applications written in different languages.
+
+If C<memcached_secret> is specified, all generated session IDs will be of the
+form C<id.base64_mac>. This is to maintain compatibility with the session store
+mechanism that L<Express|http://expressjs.com/> uses.
