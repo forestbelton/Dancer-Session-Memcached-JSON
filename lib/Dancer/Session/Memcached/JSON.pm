@@ -64,15 +64,20 @@ fun create(Str $class) {
 }
 
 fun retrieve(Str $class, Str|Int $id) {
-    $id = $secret
+    my $mid = $secret
         ? unsign($id, $secret)
         : $id;
 
-    my $val = $MEMCACHED->get($id);
+    my $val = $MEMCACHED->get($mid);
 
-    return $val
-        ? bless(from_json($val), $class)
-        : create($class);
+    if($val) {
+        $val = bless(from_json($val), $class);
+        $val->{id} = $id;
+    } else {
+        $val = create($class);
+    }
+
+    return $val;
 }
 
 method destroy() {
