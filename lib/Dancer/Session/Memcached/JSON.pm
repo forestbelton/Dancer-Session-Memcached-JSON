@@ -10,8 +10,6 @@ use base 'Dancer::Session::Abstract';
 use JSON;
 use Cache::Memcached;
 use Function::Parameters qw(:strict);
-use Storable qw(dclone);
-use Data::Structure::Util qw(unbless);
 use Dancer::Config qw(setting);
 
 use Dancer::Session::Memcached::JSON::Signature qw(sign unsign);
@@ -34,8 +32,26 @@ sub init {
     $MEMCACHED = Cache::Memcached->new(servers => \@servers);
 }
 
-method TO_JSON {
-    return unbless(dclone($self));
+method update() {
+    my $id = $secret
+        ? unsign($self->id, $secret)
+        : $self->id;
+
+    my $data = {
+        cookie => {
+            path           => setting('session_cookie_path') // '/',
+            httpOnly       => setting('session_is_http_only') // JSON::true,
+            expires        => setting('session_expires'),
+            originalMaxAge => undef
+        },
+    };
+
+    map {
+        $data->{$_} = $self->{$_};
+    } keys %$self;
+
+    $MEMCACHED->set($id, to_json $data);
+    return $self;
 }
 
 fun create(Str $class) {
@@ -44,22 +60,17 @@ fun create(Str $class) {
     $self->{id} = sign($self->id, $secret)
         if $secret;
 
-    $MEMCACHED->set($self->id => to_json($self, {
-        allow_blessed   => 1,
-        convert_blessed => 1,
-    }));
-
-    return $self;
+    return $self->update;
 }
 
 fun retrieve(Str $class, Str|Int $id) {
-    my $id = $secret
-        ? unsign($self->id, $secret)
-        : $self->id;
+    $id = $secret
+        ? unsign($id, $secret)
+        : $id;
 
     my $val = $MEMCACHED->get($id);
 
-    $val
+    return $val
         ? bless(from_json($val), $class)
         : create($class);
 }
@@ -73,16 +84,7 @@ method destroy() {
 }
 
 method flush() {
-    my $id = $secret
-        ? unsign($self->id, $secret)
-        : $self->id;
-
-    $MEMCACHED->set($id => to_json($self, {
-        allow_blessed   => 1,
-        convert_blessed => 1,
-    }));
-
-    return $self;
+    return $self->update;
 }
 
 1;
