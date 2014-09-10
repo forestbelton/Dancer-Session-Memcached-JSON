@@ -24,7 +24,7 @@ sub init {
     $class->SUPER::init;
     $secret = setting('memcached_secret');
 
-    if(!@servers or grep { not $_ =~ /^\d+\.\d+\.\d+\.\d+:\d+$/ } @servers) {
+    if(!@servers) {
         die "Invalid value for memcached_servers. Should be a comma " .
                 "separated list of the form `server:port'";
     }
