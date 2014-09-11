@@ -4,7 +4,7 @@ Dancer::Session::Memcached::JSON - Session store in memcached with JSON serializ
 
 # VERSION
 
-version 0.002
+version 0.004
 
 # SYNOPSIS
 
